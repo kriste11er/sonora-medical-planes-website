@@ -7,6 +7,7 @@ export interface LogEntry {
   day: number;
   date: string;
   author: string;
+  title: string;
   preview: string;
   fullText: string;
   images: string[];
@@ -35,7 +36,7 @@ export function getLogData(year: string, dayFolder: string): LogEntry {
   
   // Read and parse markdown file
   const content = fs.readFileSync(logPath, 'utf-8');
-  const { data, content: markdownContent } = matter(content);
+  const { data: frontmatter, content: markdownContent } = matter(content);
   
   // Parse the day number from the folder name
   const dayMatch = dayFolder.match(/day(\d+)/i);
@@ -52,7 +53,7 @@ export function getLogData(year: string, dayFolder: string): LogEntry {
   try {
     if (fs.existsSync(imagesPath)) {
       images = fs.readdirSync(imagesPath)
-        .filter(file => /\.(jpg|jpeg|png)$/i.test(file))
+        .filter(file => /\.(jpg|jpeg|png|svg)$/i.test(file))
         .map(file => `/logs/${year}/${dayFolder}/images/${file}`);
     }
   } catch (error) {
@@ -63,16 +64,28 @@ export function getLogData(year: string, dayFolder: string): LogEntry {
   const bulletPoints = markdownContent.split('\n').filter(line => line.trim().startsWith('-'));
   const preview = bulletPoints[0]?.replace(/^-\s*/, '') || 'No preview available';
 
+  // Default title to the first line if no frontmatter title
+  const firstLine = markdownContent.split('\n').find(line => line.trim().startsWith('#'))?.trim().replace(/^#\s*/, '') || '';
+  
   return {
     id: dayFolder,
     day: dayNumber,
     date: formattedDate,
-    author: data.author || 'Unknown Author',
+    author: frontmatter.author || 'Unknown Author',
+    title: frontmatter.title || firstLine || `Day ${dayNumber}`,
     preview,
     fullText: markdownContent,
     images
   };
 }
+
+/*
+export function organizeLogsByWeek(logs: LogEntry[]): WeekData[] {
+  return [{
+    logs: logs.sort((a, b) => a.day - b.day)
+  }];
+}
+*/
 
 export function organizeLogsByWeek(logs: LogEntry[]): WeekData[] {
   const weekMap = new Map<number, LogEntry[]>();
@@ -92,3 +105,4 @@ export function organizeLogsByWeek(logs: LogEntry[]): WeekData[] {
       logs: logs.sort((a, b) => a.day - b.day)
     }));
 }
+
