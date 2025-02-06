@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ChevronLeft, ChevronRight, Heart, Send } from 'lucide-react';
 
 const NavBar = () => {
   return (
@@ -16,7 +15,7 @@ const NavBar = () => {
               href="/" 
               className="font-bold text-2xl bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent"
             >
-              Peanut Butter Tuna Spoon
+              Sonora Medical Delivery Planes
             </Link>
             
             {/* Primary Navigation - Desktop */}
@@ -28,7 +27,7 @@ const NavBar = () => {
                 Home
               </Link>
               <Link 
-                href="/about" 
+                href="/logs" 
                 className="px-4 py-2 text-gray-700 hover:text-blue-600 rounded-full hover:bg-blue-50 transition-all duration-200"
               >
                 About
@@ -133,7 +132,6 @@ const CAROUSEL_ITEMS = [
 
 export default function HomePage() {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [email, setEmail] = useState('');
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -313,7 +311,7 @@ export default function HomePage() {
             <div>
               <h3 className="font-bold text-lg mb-4">About Us</h3>
               <ul className="space-y-2">
-                <li><Link href="/about" className="hover:text-blue-400">Our Story</Link></li>
+                <li><Link href="/logs" className="hover:text-blue-400">Our Story</Link></li>
                 <li><Link href="/team" className="hover:text-blue-400">Team</Link></li>
                 <li><Link href="/contact" className="hover:text-blue-400">Contact</Link></li>
               </ul>
