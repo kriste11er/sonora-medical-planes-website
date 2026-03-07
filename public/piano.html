@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Piano Chord Chart</title>
+<style>
+:root {
+  --bg: #0f0f1a;
+  --surface: #181830;
+  --border: #282848;
+  --text: #e0e0e0;
+  --dim: #777;
+  --root-w: #E8804A;
+  --root-b: #B05A2A;
+  --tone-w: #4ECDC4;
+  --tone-b: #2A9D8F;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 20px;
+  font-size: 16px;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+h1 { font-size: 2.4rem; color: #fff; }
+.subtitle { color: var(--dim); font-size: 1.15rem; margin-top: 5px; }
+.controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.controls button {
+  padding: 12px 22px;
+  border: 2px solid #444;
+  background: transparent;
+  color: #aaa;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: 600;
+  transition: all 0.15s;
+  user-select: none;
+}
+.controls button:hover { border-color: #666; color: #ccc; }
+.controls button[data-level="beginner"].active {
+  border-color: #4ECDC4;
+  background: rgba(78,205,196,0.12);
+  color: #4ECDC4;
+}
+.controls button[data-level="intermediate"].active {
+  border-color: #FFC300;
+  background: rgba(255,195,0,0.12);
+  color: #FFC300;
+}
+.controls button[data-level="advanced"].active {
+  border-color: #FF6B6B;
+  background: rgba(255,107,107,0.12);
+  color: #FF6B6B;
+}
+.controls .sep {
+  width: 1px;
+  height: 24px;
+  background: #444;
+  margin: 0 4px;
+}
+.controls button.layout-btn.active {
+  border-color: #c89aff;
+  background: rgba(200,154,255,0.12);
+  color: #c89aff;
+}
+.controls button.zoom-btn.active {
+  border-color: #ffaa55;
+  background: rgba(255,170,85,0.12);
+  color: #ffaa55;
+}
+.info-bar {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+  color: var(--dim);
+}
+.legend { display: flex; gap: 16px; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-swatch {
+  width: 16px; height: 16px;
+  border-radius: 2px;
+  border: 1px solid #555;
+}
+.chart-wrapper {
+  overflow: auto;
+  max-height: calc(100vh - 140px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+table { border-collapse: separate; border-spacing: 0; }
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 10;
+  padding: 14px 10px 10px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #bbb;
+  text-align: center;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+thead th:first-child {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 20;
+  min-width: 100px;
+  background: var(--surface);
+}
+.th-sub {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--dim);
+  margin-top: 3px;
+  white-space: normal;
+  max-width: 140px;
+}
+.cat-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.cat-beginner { background: rgba(78,205,196,0.2); color: #4ECDC4; }
+.cat-intermediate { background: rgba(255,195,0,0.2); color: #FFC300; }
+.cat-advanced { background: rgba(255,107,107,0.2); color: #FF6B6B; }
+tbody td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 5;
+  padding: 12px 16px;
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: #fff;
+  text-align: center;
+  border-right: 2px solid var(--border);
+  white-space: nowrap;
+}
+td.chord-cell {
+  padding: 12px 10px;
+  text-align: center;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+  vertical-align: middle;
+}
+td.chord-cell[data-level="beginner"] { background: rgba(78,205,196,0.15); }
+td.chord-cell[data-level="intermediate"] { background: rgba(255,195,0,0.15); }
+td.chord-cell[data-level="advanced"] { background: rgba(255,107,107,0.15); }
+td.chord-cell:hover { background: rgba(255,255,255,0.35); }
+.cell-notes {
+  font-size: 1.1rem;
+  color: var(--dim);
+  margin-top: 4px;
+  letter-spacing: 0.3px;
+}
+
+/* Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.72);
+  z-index: 100;
+  justify-content: center;
+  align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 3px solid var(--border);
+  border-radius: 12px;
+  padding: 30px 34px;
+  max-width: 95vw;
+  width: fit-content;
+  position: relative;
+}
+.modal h2 { margin-bottom: 4px; font-size: 1.9rem; }
+.modal-sub { color: var(--dim); font-size: 1.15rem; margin-bottom: 18px; }
+.modal-piano { text-align: center; margin: 20px 0; padding-bottom: 8px; }
+.modal-piano svg { max-width: 100%; height: auto; }
+.modal-notes { font-size: 1.2rem; margin-top: 12px; }
+.modal-intervals { font-size: 1.05rem; color: var(--dim); margin-top: 8px; }
+.modal-close {
+  position: absolute;
+  top: 10px; right: 14px;
+  background: none; border: none;
+  color: var(--dim);
+  font-size: 1.5rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.modal-close:hover { color: #fff; }
+.modal-play {
+  margin-top: 16px;
+  padding: 10px 26px;
+  background: var(--tone-w);
+  color: #111;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+.modal-play:hover { opacity: 0.85; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Piano Chord Reference Chart</h1>
+    <div class="subtitle">12 root notes x chord qualities — click any chord to zoom in and hear it</div>
+  </div>
+  <div class="controls" id="controls">
+    <button class="active" data-level="beginner">Beginner (6)</button>
+    <button data-level="intermediate">+ Intermediate (7)</button>
+    <button data-level="advanced">+ Advanced (12)</button>
+    <div class="sep"></div>
+    <button class="layout-btn active" data-layout="roots-top" id="btnRootsTop">Roots Across Top</button>
+    <button class="layout-btn" data-layout="roots-left" id="btnRootsLeft">Roots Down Left</button>
+    <div class="sep"></div>
+    <button class="zoom-btn active" data-zoom="1" id="zoomNormal">Normal</button>
+    <button class="zoom-btn" data-zoom="0.5" id="zoom50">50%</button>
+    <button class="zoom-btn" data-zoom="fit" id="zoomFit">Fit All</button>
+  </div>
+</header>
+
+<div class="info-bar">
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#E8804A"></div> Root</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#4ECDC4"></div><div class="legend-swatch" style="background:#FFD54F;margin-left:-8px"></div><div class="legend-swatch" style="background:#FF8A80;margin-left:-8px"></div> Chord tones (by level)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#CCCCCC"></div> ◀ / ▶ Circle of 5ths (prev / next)</div>
+    <div class="legend-item"><div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #FF8C00"></div> Middle C</div>
+  </div>
+  <div>Click any cell to enlarge and play</div>
+</div>
+
+<div class="chart-wrapper" id="chartWrapper"></div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <button class="modal-close" id="modalClose">&times;</button>
+    <h2 id="modalTitle"></h2>
+    <div class="modal-sub" id="modalSub"></div>
+    <div class="modal-piano" id="modalPiano"></div>
+    <div class="modal-notes" id="modalNotes"></div>
+    <div class="modal-intervals" id="modalIntervals"></div>
+    <button class="modal-play" id="modalPlay">Play Chord</button>
+  </div>
+</div>
+
+<script>
+// ===== DATA =====
+const NOTE_NAMES = ['C','C#/Db','D','D#/Eb','E','F','F#/Gb','G','G#/Ab','A','A#/Bb','B'];
+const NOTE_SHORT = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const BLACK = new Set([1,3,6,8,10]);
+// Circle of fifths order (each +7 semitones): C, G, D, A, E, B, F#, Db, Ab, Eb, Bb, F
+const CIRCLE_OF_FIFTHS = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
+
+const STEP = {
+  1:'half step', 2:'whole step', 3:'minor 3rd', 4:'major 3rd',
+  5:'perfect 4th', 6:'tritone', 7:'perfect 5th', 8:'minor 6th',
+  9:'major 6th', 10:'minor 7th', 11:'major 7th'
+};
+
+const CHORDS = {
+  beginner: [
+    { name:'Major', intervals:[0,4,7], desc:'major 3rd + minor 3rd' },
+    { name:'Minor', intervals:[0,3,7], desc:'minor 3rd + major 3rd' },
+    { name:'Dim', intervals:[0,3,6], desc:'minor 3rd + minor 3rd' },
+    { name:'Aug', intervals:[0,4,8], desc:'major 3rd + major 3rd' },
+    { name:'Sus2', intervals:[0,2,7], desc:'whole step + perfect 4th' },
+    { name:'Sus4', intervals:[0,5,7], desc:'perfect 4th + whole step' },
+  ],
+  intermediate: [
+    { name:'Dom 7', intervals:[0,4,7,10], desc:'major + minor 3rd + minor 3rd' },
+    { name:'Maj 7', intervals:[0,4,7,11], desc:'major + minor 3rd + major 3rd' },
+    { name:'Min 7', intervals:[0,3,7,10], desc:'minor + major 3rd + minor 3rd' },
+    { name:'Dim 7', intervals:[0,3,6,9], desc:'three stacked minor 3rds' },
+    { name:'Half-Dim 7', intervals:[0,3,6,10], desc:'dim triad + major 3rd' },
+    { name:'Min-Maj 7', intervals:[0,3,7,11], desc:'minor + major 3rd + major 3rd' },
+    { name:'Aug 7', intervals:[0,4,8,10], desc:'aug triad + whole step' },
+  ],
+  advanced: [
+    { name:'Dom 9', intervals:[0,4,7,10,14], desc:'dom 7 + major 3rd' },
+    { name:'Maj 9', intervals:[0,4,7,11,14], desc:'maj 7 + minor 3rd' },
+    { name:'Min 9', intervals:[0,3,7,10,14], desc:'min 7 + major 3rd' },
+    { name:'Add9', intervals:[0,4,7,14], desc:'major triad + 9th' },
+    { name:'6th', intervals:[0,4,7,9], desc:'major triad + major 2nd' },
+    { name:'Min 6', intervals:[0,3,7,9], desc:'minor triad + major 2nd' },
+    { name:'Dom 11', intervals:[0,4,7,10,14,17], desc:'dom 9 + minor 3rd' },
+    { name:'Min 11', intervals:[0,3,7,10,14,17], desc:'min 9 + minor 3rd' },
+    { name:'Dom 13', intervals:[0,4,7,10,14,17,21], desc:'dom 11 + major 3rd' },
+    { name:'Aug-Maj 7', intervals:[0,4,8,11], desc:'aug triad + minor 3rd' },
+    { name:'7sus4', intervals:[0,5,7,10], desc:'sus4 + minor 3rd' },
+    { name:'7#9', intervals:[0,4,7,10,15], desc:'dom 7 + augmented 3rd (Hendrix)' },
+  ],
+};
+
+// ===== STATE =====
+const activeLevels = new Set(['beginner']);
+let layout = 'roots-top'; // or 'roots-left'
+let currentModal = null;
+let zoomScale = 1; // 1 = normal, 0.5 = half, 'fit' computed dynamically
+
+// ===== SVG RENDERING =====
+function pianoSVG(root, intervals, large, fifthRef, level) {
+  const toneColors = {
+    beginner:     { white: '#4ECDC4', black: '#2A9D8F' },
+    intermediate: { white: '#FFD54F', black: '#C9A83A' },
+    advanced:     { white: '#E84393', black: '#B5307B' },
+  };
+  const tc = toneColors[level] || toneColors.beginner;
+  const toneColor = tc.white;
+  const toneColorDark = tc.black;
+
+  const tones = intervals.map(i => root + i);
+  const maxT = Math.max(...tones);
+
+  const prevAbsolute = root - 7; // 5th below root
+  const nextAbsolute = root + 7; // 5th above root
+
+  let start, finalEnd;
+  const fifthRefMap = {};
+
+  if (large) {
+    // Popup: keyboard centered on middle C, with circle of fifths
+    // Advanced: 6 octaves (C2–C8) so popup doesn't resize between chords
+    // Beginner/Intermediate: 4 octaves (C2–C6) + extra C
+    start = (level === 'advanced') ? -36 : -24; // C1 for advanced, C2 for others
+    const baseEnd = (level === 'advanced') ? 36 : 24; // C7 for advanced, C6 for others
+    const needed = Math.max(baseEnd, maxT, nextAbsolute);
+    finalEnd = needed <= baseEnd ? baseEnd : needed + (11 - (((needed % 12) + 12) % 12));
+    if (fifthRef !== undefined && fifthRef !== null) {
+      fifthRefMap[prevAbsolute] = 'prev';
+      fifthRefMap[nextAbsolute] = 'next';
+    }
+  } else {
+    // Grid cell: minimal keyboard — fit chord tones + circle of fifths
+    // Start at nearest C at or below the lowest needed key (prev fifth or root)
+    const minKey = Math.min(prevAbsolute, 0);
+    start = minKey - (((minKey % 12) + 12) % 12);
+    // End at nearest B at or above highest needed key (chord tones or next fifth)
+    const endRaw = Math.max(maxT, nextAbsolute);
+    finalEnd = endRaw + (11 - (((endRaw % 12) + 12) % 12));
+    // Circle of fifths highlights in grid cells too
+    if (fifthRef !== undefined && fifthRef !== null) {
+      fifthRefMap[prevAbsolute] = 'prev';
+      fifthRefMap[nextAbsolute] = 'next';
+    }
+  }
+
+  const z = large ? 1 : zoomScale;
+  const WKW = large ? 44 : Math.round(30 * z);
+  const WKH = large ? 130 : Math.round(105 * z);
+  const BKW = large ? 28 : Math.round(19 * z);
+  const BKH = large ? 84 : Math.round(66 * z);
+
+  // map semitone -> {x, black}
+  const pos = {};
+  let wi = 0;
+  for (let s = start; s <= finalEnd; s++) {
+    const m = ((s % 12) + 12) % 12;
+    if (!BLACK.has(m)) {
+      pos[s] = { x: wi * WKW, black: false };
+      wi++;
+    }
+  }
+  for (let s = start; s <= finalEnd; s++) {
+    const m = ((s % 12) + 12) % 12;
+    if (BLACK.has(m)) {
+      const prev = pos[s - 1];
+      if (prev) pos[s] = { x: prev.x + WKW - BKW / 2, black: true };
+    }
+  }
+
+  const W = wi * WKW;
+  const markerH = large ? 24 : 0; // space below keys for middle C marker (large only)
+  const totalH = WKH + markerH;
+  // Store middle C x position for centering in popup
+  const middleCx = pos[0] ? pos[0].x + WKW / 2 : 0;
+  let svg = `<svg width="${W}" height="${totalH}" data-middlec-x="${middleCx}" xmlns="http://www.w3.org/2000/svg" style="display:block;${large ? 'margin:0 auto;' : ''}">`;
+
+  // white keys
+  for (let s = start; s <= finalEnd; s++) {
+    const p = pos[s];
+    if (!p || p.black) continue;
+    const isRoot = s === tones[0];
+    const isTone = tones.includes(s);
+    const fifthType = fifthRefMap[s];
+    const fill = isRoot ? '#E8804A' : isTone ? toneColor : fifthType ? '#CCCCCC' : '#F0F0F0';
+    const keyStroke = '#888';
+    const keyStrokeW = large ? 1 : 0.6;
+    svg += `<rect class="piano-key" data-midi="${60+s}" x="${p.x}" y="0" width="${WKW}" height="${WKH}" fill="${fill}" stroke="${keyStroke}" stroke-width="${keyStrokeW}" style="cursor:pointer"/>`;
+    if (large && (isTone || fifthType)) {
+      const label = NOTE_SHORT[((s % 12) + 12) % 12];
+      const txtFill = isRoot ? '#fff' : isTone ? '#1a1a2e' : '#444';
+      svg += `<text x="${p.x + WKW/2}" y="${WKH - 7}" text-anchor="middle" font-size="13" font-weight="bold" fill="${txtFill}" font-family="system-ui" pointer-events="none">${label}</text>`;
+      if (fifthType) {
+        const arrow = fifthType === 'prev' ? '\u25C0' : '\u25B6';
+        svg += `<text x="${p.x + WKW/2}" y="${WKH - 20}" text-anchor="middle" font-size="16" fill="#333" font-family="system-ui" pointer-events="none">${arrow}</text>`;
+      }
+    }
+  }
+
+  // black keys
+  for (let s = start; s <= finalEnd; s++) {
+    const p = pos[s];
+    if (!p || !p.black) continue;
+    const isRoot = s === tones[0];
+    const isTone = tones.includes(s);
+    const fifthType = fifthRefMap[s];
+    const isFifthAndTone = isTone && fifthType;
+    const fill = isRoot ? '#E8804A' : isFifthAndTone ? toneColorDark : isTone ? toneColor : fifthType ? '#888888' : '#222';
+    const bStroke = isRoot ? '#8B3A1A' : '#111';
+    const bStrokeW = isRoot ? (large ? 3 : 2) : 0.5;
+    svg += `<rect class="piano-key" data-midi="${60+s}" x="${p.x}" y="0" width="${BKW}" height="${BKH}" fill="${fill}" stroke="${bStroke}" stroke-width="${bStrokeW}" style="cursor:pointer"/>`;
+    if (large && (isTone || fifthType)) {
+      const label = NOTE_SHORT[((s % 12) + 12) % 12];
+      svg += `<text x="${p.x + BKW/2}" y="${BKH - 5}" text-anchor="middle" font-size="11" font-weight="bold" fill="#fff" font-family="system-ui" pointer-events="none">${label}</text>`;
+      if (fifthType) {
+        const arrow = fifthType === 'prev' ? '\u25C0' : '\u25B6';
+        svg += `<text x="${p.x + BKW/2}" y="${BKH - 16}" text-anchor="middle" font-size="12" fill="#eee" font-family="system-ui" pointer-events="none">${arrow}</text>`;
+      }
+    }
+  }
+
+  // Bold D-shaped outline on root key (drawn after black keys so it traces the visible shape)
+  const rootSemi = tones[0];
+  const rootPos = pos[rootSemi];
+  if (rootPos && !rootPos.black) {
+    const x = rootPos.x;
+    const hasBlackLeft = pos[rootSemi - 1] && pos[rootSemi - 1].black;
+    const hasBlackRight = pos[rootSemi + 1] && pos[rootSemi + 1].black;
+    const sw = large ? 3.5 : 2.5;
+    let d;
+    if (hasBlackLeft && hasBlackRight) {
+      d = `M${x + BKW/2},0 L${x + WKW - BKW/2},0 L${x + WKW - BKW/2},${BKH} L${x + WKW},${BKH} L${x + WKW},${WKH} L${x},${WKH} L${x},${BKH} L${x + BKW/2},${BKH} Z`;
+    } else if (hasBlackRight) {
+      d = `M${x},0 L${x + WKW - BKW/2},0 L${x + WKW - BKW/2},${BKH} L${x + WKW},${BKH} L${x + WKW},${WKH} L${x},${WKH} Z`;
+    } else if (hasBlackLeft) {
+      d = `M${x + BKW/2},0 L${x + WKW},0 L${x + WKW},${WKH} L${x},${WKH} L${x},${BKH} L${x + BKW/2},${BKH} Z`;
+    } else {
+      d = `M${x},0 L${x + WKW},0 L${x + WKW},${WKH} L${x},${WKH} Z`;
+    }
+    svg += `<path d="${d}" fill="none" stroke="#8B3A1A" stroke-width="${sw}" pointer-events="none"/>`;
+  }
+
+  // Fake cutout on the last C key (simulate Db black key notch without adding the key)
+  const lastSemi = finalEnd;
+  const lastMod = ((lastSemi % 12) + 12) % 12;
+  if (lastMod === 0 && pos[lastSemi]) { // last key is a C
+    const p = pos[lastSemi];
+    const cutX = p.x + WKW - BKW / 2;
+    svg += `<rect x="${cutX}" y="0" width="${BKW / 2}" height="${BKH}" fill="#222" stroke="#111" stroke-width="0.5" pointer-events="none"/>`;
+  }
+
+  // Middle C marker below keyboard (large/popup only)
+  if (large && pos[0] && !pos[0].black) {
+    const cx = pos[0].x + WKW / 2;
+    const markerY = WKH + 2;
+    svg += `<polygon points="${cx},${markerY} ${cx - 5},${markerY + 7} ${cx + 5},${markerY + 7}" fill="#FF8C00" pointer-events="none"/>`;
+    svg += `<text x="${cx}" y="${markerY + 19}" text-anchor="middle" font-size="10" fill="#FF8C00" font-family="system-ui" font-weight="bold" pointer-events="none">C4</text>`;
+  }
+
+  svg += '</svg>';
+  return svg;
+}
+
+function noteNames(root, intervals) {
+  return intervals.map(i => NOTE_SHORT[((root + i) % 12 + 12) % 12]).join(' - ');
+}
+
+// Map each root semitone to its predecessor in circle of fifths (wraps: C's prev is F)
+const FIFTH_PREV = {};
+for (let i = 0; i < CIRCLE_OF_FIFTHS.length; i++) {
+  const prevIdx = (i - 1 + CIRCLE_OF_FIFTHS.length) % CIRCLE_OF_FIFTHS.length;
+  FIFTH_PREV[CIRCLE_OF_FIFTHS[i]] = CIRCLE_OF_FIFTHS[prevIdx];
+}
+
+// ===== BUILD CHART =====
+function getVisibleChords() {
+  const out = [];
+  for (const lvl of ['beginner','intermediate','advanced']) {
+    if (activeLevels.has(lvl)) {
+      for (const c of CHORDS[lvl]) out.push({ ...c, level: lvl });
+    }
+  }
+  return out;
+}
+
+function buildChartInternal() {
+  const chords = getVisibleChords();
+  if (!chords.length) {
+    document.getElementById('chartWrapper').innerHTML = '<p style="padding:20px;color:#777;">Select at least one level above.</p>';
+    return;
+  }
+
+  let html;
+  // Inject zoom-dependent cell styles (cell-notes font stays fixed)
+  const zp = Math.round(12 * zoomScale); // cell padding
+  html = `<style>
+    table td.chord-cell { padding: ${zp}px ${Math.round(10*zoomScale)}px; }
+  </style>`;
+  if (layout === 'roots-top') {
+    html += buildRootsTop(chords);
+  } else {
+    html += buildRootsLeft(chords);
+  }
+  document.getElementById('chartWrapper').innerHTML = html;
+
+  document.querySelectorAll('.chord-cell').forEach(cell => {
+    let clickTimer = null;
+    cell.addEventListener('click', (e) => {
+      if (e.target.closest('.piano-key')) return; // individual key clicks handled separately
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; return; }
+      clickTimer = setTimeout(() => { clickTimer = null; openModal(cell); }, 250);
+    });
+    cell.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.piano-key')) return;
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+      // Play chord directly without opening modal
+      const root = parseInt(cell.dataset.root);
+      const intervals = cell.dataset.intervals.split(',').map(Number);
+      const base = 60 + root;
+      const vol = 0.2 / Math.sqrt(intervals.length);
+      intervals.forEach(interval => {
+        const freq = 440 * Math.pow(2, ((base + interval) - 69) / 12);
+        playPianoTone(freq, vol, 3);
+      });
+    });
+  });
+}
+
+function buildChart() {
+  // For fit mode, render at normal scale first, then apply CSS transform
+  if (currentZoomMode === 'fit') {
+    zoomScale = 1;
+    buildChartInternal();
+    applyFitTransform();
+    return;
+  }
+  clearFitTransform();
+  buildChartInternal();
+}
+
+function buildRootsTop(chords) {
+  // columns = 12 roots (circle of fifths), rows = chord types
+  let html = '<table><thead><tr><th>Chord Type</th>';
+  for (const r of CIRCLE_OF_FIFTHS) {
+    html += `<th>${NOTE_NAMES[r]}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const chord of chords) {
+    const catClass = 'cat-' + chord.level;
+    html += `<tr><td title="${chord.desc}">${chord.name}<br><span class="cat-badge ${catClass}">${chord.level}</span><br><span style="font-size:0.7rem;color:var(--dim)">${chord.desc}</span></td>`;
+    for (const r of CIRCLE_OF_FIFTHS) {
+      const notes = noteNames(r, chord.intervals);
+      const prev = FIFTH_PREV[r];
+      html += `<td class="chord-cell" data-level="${chord.level}" data-root="${r}" data-intervals="${chord.intervals.join(',')}" data-name="${chord.name}" data-desc="${chord.desc}">
+        ${pianoSVG(r, chord.intervals, false, prev, chord.level)}
+        <div class="cell-notes">${notes}</div>
+      </td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+function buildRootsLeft(chords) {
+  // columns = chord types, rows = 12 roots
+  let html = '<table><thead><tr><th>Root</th>';
+  for (const chord of chords) {
+    const catClass = 'cat-' + chord.level;
+    html += `<th title="${chord.desc}">${chord.name}<span class="th-sub">${chord.desc}</span><span class="cat-badge ${catClass}">${chord.level}</span></th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const r of CIRCLE_OF_FIFTHS) {
+    html += `<tr><td>${NOTE_NAMES[r]}</td>`;
+    const prev = FIFTH_PREV[r];
+    for (const chord of chords) {
+      const notes = noteNames(r, chord.intervals);
+      html += `<td class="chord-cell" data-level="${chord.level}" data-root="${r}" data-intervals="${chord.intervals.join(',')}" data-name="${chord.name}" data-desc="${chord.desc}">
+        ${pianoSVG(r, chord.intervals, false, prev, chord.level)}
+        <div class="cell-notes">${notes}</div>
+      </td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+// ===== LEVEL TOGGLES =====
+document.querySelectorAll('#controls button[data-level]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const lvl = btn.dataset.level;
+    if (activeLevels.has(lvl)) { activeLevels.delete(lvl); btn.classList.remove('active'); }
+    else { activeLevels.add(lvl); btn.classList.add('active'); }
+    buildChart();
+  });
+});
+
+// ===== LAYOUT TOGGLES =====
+document.getElementById('btnRootsTop').addEventListener('click', function() {
+  if (layout === 'roots-top') return;
+  layout = 'roots-top';
+  this.classList.add('active');
+  document.getElementById('btnRootsLeft').classList.remove('active');
+  buildChart();
+});
+document.getElementById('btnRootsLeft').addEventListener('click', function() {
+  if (layout === 'roots-left') return;
+  layout = 'roots-left';
+  this.classList.add('active');
+  document.getElementById('btnRootsTop').classList.remove('active');
+  buildChart();
+});
+
+// ===== MODAL =====
+let currentCell = null;
+
+function openModal(cell) {
+  currentCell = cell;
+  const root = parseInt(cell.dataset.root);
+  const intervals = cell.dataset.intervals.split(',').map(Number);
+  const name = cell.dataset.name;
+  const desc = cell.dataset.desc;
+  currentModal = { root, intervals };
+
+  const prev = FIFTH_PREV[root];
+  const level = cell.dataset.level || 'beginner';
+  document.getElementById('modalTitle').textContent = NOTE_NAMES[root] + ' ' + name;
+  document.getElementById('modalSub').textContent = desc;
+  document.getElementById('modalPiano').innerHTML = pianoSVG(root, intervals, true, prev, level);
+  document.getElementById('modalNotes').textContent = 'Notes: ' + noteNames(root, intervals);
+
+  const steps = [];
+  for (let i = 1; i < intervals.length; i++) {
+    const d = intervals[i] - intervals[i - 1];
+    steps.push('+' + d + ' (' + (STEP[d] || d + ' semitones') + ')');
+  }
+  document.getElementById('modalIntervals').textContent = 'Stacked intervals: ' + steps.join(', ');
+
+  const modal = document.querySelector('.modal');
+  const colors = { beginner: '#4ECDC4', intermediate: '#FFC300', advanced: '#FF6B6B' };
+  const borderColor = colors[level] || '#444';
+  modal.style.borderColor = borderColor;
+  modal.style.background = 'var(--surface)';
+
+  const playBtn = document.getElementById('modalPlay');
+  playBtn.style.background = borderColor;
+  playBtn.style.color = level === 'intermediate' ? '#111' : '#fff';
+
+  document.getElementById('modal').classList.add('active');
+
+}
+
+function navigateModal(rowDelta, colDelta) {
+  if (!currentCell) return;
+  const td = currentCell;
+  const tr = td.parentElement;
+  const tbody = tr.parentElement;
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const rowIdx = rows.indexOf(tr);
+  const cells = Array.from(tr.querySelectorAll('td.chord-cell'));
+  const colIdx = cells.indexOf(td);
+
+  const newRowIdx = rowIdx + rowDelta;
+  const newColIdx = colIdx + colDelta;
+
+  if (newRowIdx < 0 || newRowIdx >= rows.length) return;
+  const newRow = rows[newRowIdx];
+  const newCells = newRow.querySelectorAll('td.chord-cell');
+  if (newColIdx < 0 || newColIdx >= newCells.length) return;
+
+  openModal(newCells[newColIdx]);
+}
+
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeModal(); return; }
+  if (!currentModal) return;
+  if (e.key === 'ArrowUp') { e.preventDefault(); navigateModal(-1, 0); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); navigateModal(1, 0); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); navigateModal(0, -1); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); navigateModal(0, 1); }
+  else if (e.key === ' ') { e.preventDefault(); document.getElementById('modalPlay').click(); }
+});
+function closeModal() {
+  document.getElementById('modal').classList.remove('active');
+  currentModal = null;
+  currentCell = null;
+}
+
+// ===== AUDIO =====
+let audioCtx = null;
+
+// Piano-like tone: layered harmonics with fast attack, smooth decay
+function playPianoTone(freq, volume, dur) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const now = audioCtx.currentTime;
+  // Harmonics with decreasing amplitude for a warm piano sound
+  const harmonics = [
+    { ratio: 1,   amp: 1.0  },
+    { ratio: 2,   amp: 0.4  },
+    { ratio: 3,   amp: 0.15 },
+    { ratio: 4,   amp: 0.06 },
+    { ratio: 5,   amp: 0.02 },
+  ];
+  const master = audioCtx.createGain();
+  master.gain.setValueAtTime(volume, now);
+  master.connect(audioCtx.destination);
+
+  for (const h of harmonics) {
+    const osc = audioCtx.createOscillator();
+    const env = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq * h.ratio;
+    // Fast attack, piano-like decay curve
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime(h.amp, now + 0.008);
+    env.gain.exponentialRampToValueAtTime(h.amp * 0.5, now + dur * 0.3);
+    env.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    osc.connect(env);
+    env.connect(master);
+    osc.start(now);
+    osc.stop(now + dur);
+  }
+}
+
+function playNote(midi, dur) {
+  const freq = 440 * Math.pow(2, (midi - 69) / 12);
+  playPianoTone(freq, 0.25, dur);
+}
+
+document.getElementById('modalPlay').addEventListener('click', () => {
+  if (!currentModal) return;
+  const { root, intervals } = currentModal;
+  const base = 60 + root;
+  const vol = 0.2 / Math.sqrt(intervals.length);
+  intervals.forEach(interval => {
+    const freq = 440 * Math.pow(2, ((base + interval) - 69) / 12);
+    playPianoTone(freq, vol, 3);
+  });
+});
+
+document.addEventListener('click', e => {
+  const key = e.target.closest('.piano-key');
+  if (!key) return;
+  e.stopPropagation();
+  const midi = parseInt(key.dataset.midi);
+  if (!isNaN(midi)) playNote(midi, 1.5);
+});
+
+// ===== ZOOM =====
+let currentZoomMode = '1';
+
+function applyFitTransform() {
+  const wrapper = document.getElementById('chartWrapper');
+  // Reset scroll and remove ALL constraints before measuring
+  wrapper.scrollLeft = 0;
+  wrapper.scrollTop = 0;
+  wrapper.style.overflow = 'visible';
+  wrapper.style.maxHeight = 'none';
+  wrapper.style.height = 'auto';
+  const table = wrapper.querySelector('table');
+  if (!table) return;
+  table.style.transform = 'none';
+  table.style.transformOrigin = 'top left';
+
+  // Two-pass approach: first estimate scale, apply font compensation, re-measure, then finalize
+  const availW = document.documentElement.clientWidth - 40;
+  const wrapperTop = wrapper.getBoundingClientRect().top;
+  const availH = window.innerHeight - wrapperTop - 10;
+
+  // Pass 1: rough scale estimate
+  void table.offsetHeight;
+  let tableW = table.scrollWidth;
+  let tableH = table.scrollHeight;
+  let scale = Math.min(availW / tableW, availH / tableH, 1);
+  let invScale = 1 / scale;
+
+  // Apply font compensation (this changes table dimensions)
+  table.querySelectorAll('thead th').forEach(th => {
+    th.style.fontSize = (1.1 * invScale) + 'rem';
+  });
+  table.querySelectorAll('tbody td:first-child').forEach(td => {
+    td.style.fontSize = (1.5 * invScale) + 'rem';
+  });
+
+  // Pass 2: re-measure with compensated fonts and compute final scale
+  void table.offsetHeight;
+  tableW = table.scrollWidth;
+  tableH = table.scrollHeight;
+  scale = Math.min(availW / tableW, availH / tableH, 1);
+
+  // Apply CSS transform to scale entire table uniformly
+  table.style.transform = `scale(${scale})`;
+  // Set wrapper to the scaled dimensions so no scrollbars appear
+  wrapper.style.overflow = 'hidden';
+  wrapper.style.height = Math.ceil(tableH * scale) + 'px';
+}
+
+function clearFitTransform() {
+  const wrapper = document.getElementById('chartWrapper');
+  const table = wrapper.querySelector('table');
+  if (table) {
+    table.style.transform = '';
+    table.style.transformOrigin = '';
+  }
+  wrapper.style.overflow = 'auto';
+  wrapper.style.height = '';
+  wrapper.style.maxHeight = 'calc(100vh - 140px)';
+}
+
+document.querySelectorAll('.zoom-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.zoom-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    currentZoomMode = this.dataset.zoom;
+    applyZoomMode();
+  });
+});
+
+function applyZoomMode() {
+  if (currentZoomMode === '1') zoomScale = 1;
+  else if (currentZoomMode === '0.5') zoomScale = 0.5;
+  // 'fit' is handled inside buildChart via CSS transform
+  buildChart();
+}
+
+// ===== INIT =====
+buildChart();
+</script>
+</body>
+</html>
