@@ -185,7 +185,12 @@ td.chord-cell {
 td.chord-cell[data-level="beginner"] { background: rgba(78,205,196,0.15); }
 td.chord-cell[data-level="intermediate"] { background: rgba(255,195,0,0.15); }
 td.chord-cell[data-level="advanced"] { background: rgba(255,107,107,0.15); }
-td.chord-cell:hover { background: rgba(255,255,255,0.35); }
+td.chord-cell:hover { background: rgba(255,255,255,0.25); }
+body.kb-nav td.chord-cell:hover:not(.cell-selected) { background: unset; }
+body.kb-nav td.chord-cell[data-level="beginner"]:hover:not(.cell-selected) { background: rgba(78,205,196,0.15); }
+body.kb-nav td.chord-cell[data-level="intermediate"]:hover:not(.cell-selected) { background: rgba(255,195,0,0.15); }
+body.kb-nav td.chord-cell[data-level="advanced"]:hover:not(.cell-selected) { background: rgba(255,107,107,0.15); }
+td.chord-cell.cell-selected { background: rgba(255,255,255,0.35); outline: 2px solid rgba(255,255,255,0.6); outline-offset: -2px; }
 .cell-notes {
   font-size: 1.1rem;
   color: var(--dim);
@@ -326,7 +331,7 @@ td.chord-cell:hover { background: rgba(255,255,255,0.35); }
   <div class="controls" id="controls">
     <button class="active" data-level="beginner">Beginner (6)</button>
     <button data-level="intermediate">+ Intermediate (7)</button>
-    <button data-level="advanced">+ Advanced (12)</button>
+    <button data-level="advanced">+ Advanced (13)</button>
     <div class="sep"></div>
     <button class="layout-btn active" data-layout="roots-top" id="btnRootsTop">Roots Across Top</button>
     <button class="layout-btn" data-layout="roots-left" id="btnRootsLeft">Roots Down Left</button>
@@ -385,6 +390,7 @@ td.chord-cell:hover { background: rgba(255,255,255,0.35); }
         <button id="modalInvNext" style="padding:6px 14px;background:transparent;border:2px solid #555;color:#ccc;border-radius:6px;cursor:pointer;font-size:0.9rem;font-weight:600;">Inv ▶</button>
       </div>
     </div>
+    <div id="modalKeyInfo" style="text-align:right;color:#999;font-size:0.9rem;margin-top:14px;line-height:1.6;"></div>
   </div>
 </div>
 
@@ -451,6 +457,7 @@ let inputMode = 'computer'; // 'computer' or 'phone'
 let notation = 'letters'; // 'letters', 'symbols', or 'written'
 let inversion = 0; // 0 = root position, 1 = 1st inversion, 2 = 2nd, etc.
 let hoveredCell = null; // currently hovered chord cell for Enter key playback
+let selectedCell = null; // keyboard-navigated cell
 let accidentalMode = 'sharp'; // 'sharp' or 'flat'
 
 // ===== SVG RENDERING =====
@@ -723,12 +730,13 @@ function sheetMusicSVG(root, intervals, level) {
     diaColorMap[d] = isRoot ? rootColor : toneColor;
   }
 
-  // Note name labels on lines and spaces
-  const allPositions = [
-    ...trebleLines, ...trebleSpaces,
-    middleC,
-    ...bassLines, ...bassSpaces
-  ];
+  // Note name labels: fill every diatonic step from lowest to highest note
+  const toneDias = tones.map(t => diaPos(t));
+  const minLabelD = Math.min(-10, ...toneDias);
+  const maxLabelD = Math.max(10, ...toneDias);
+  const allPositions = [];
+  for (let d = minLabelD; d <= maxLabelD; d++) allPositions.push(d);
+
   for (const d of allPositions) {
     const y = yAdj(d);
     const letter = DIAT_LETTER[((d % 7) + 7) % 7];
@@ -736,6 +744,13 @@ function sheetMusicSVG(root, intervals, level) {
     const color = isChordTone ? diaColorMap[d] : '#999';
     const weight = isChordTone ? 'bold' : 'normal';
     const fontSize = isChordTone ? '16' : '13';
+    // Draw small ledger lines at label positions outside staff
+    const outsideTreble = d > 10 || (d > -2 && d < 2);
+    const outsideBass = d < -10 || (d > -2 && d < 2);
+    const isOnLine = d % 2 === 0;
+    if (isOnLine && (d > 10 || d < -10 || d === 0)) {
+      svg += `<line x1="${labelX - 16}" y1="${y}" x2="${labelX + 16}" y2="${y}" stroke="#555" stroke-width="1"/>`;
+    }
     svg += `<text x="${labelX}" y="${y + 5}" text-anchor="middle" font-size="${fontSize}" font-weight="${weight}" fill="${color}" font-family="system-ui" pointer-events="none">${letter}</text>`;
   }
 
@@ -822,6 +837,38 @@ function inversionLabel(inv) {
   return ordinal + ' Inv' + suffix;
 }
 
+// Determine which keys a chord naturally occurs in
+const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_SCALE = [0, 2, 3, 5, 7, 8, 10];
+const ROMAN_MAJ = ['I','II','III','IV','V','VI','VII'];
+const ROMAN_MIN = ['i','ii','iii','iv','v','vi','vii'];
+
+function chordInKeys(root, intervals) {
+  // Get the pitch classes of the chord (mod 12)
+  const chordPCs = new Set(intervals.map(i => ((root + i) % 12 + 12) % 12));
+  const results = [];
+
+  for (let key = 0; key < 12; key++) {
+    // Check major key
+    const majScale = new Set(MAJOR_SCALE.map(s => (key + s) % 12));
+    if ([...chordPCs].every(pc => majScale.has(pc))) {
+      const degree = MAJOR_SCALE.indexOf(((root - key) % 12 + 12) % 12);
+      if (degree !== -1) {
+        results.push(getNoteShort(key) + ' major (' + ROMAN_MAJ[degree] + ')');
+      }
+    }
+    // Check natural minor key
+    const minScale = new Set(MINOR_SCALE.map(s => (key + s) % 12));
+    if ([...chordPCs].every(pc => minScale.has(pc))) {
+      const degree = MINOR_SCALE.indexOf(((root - key) % 12 + 12) % 12);
+      if (degree !== -1) {
+        results.push(getNoteShort(key) + ' minor (' + ROMAN_MIN[degree] + ')');
+      }
+    }
+  }
+  return results;
+}
+
 // Get chord intervals with appropriate root voicing and inversion applied
 function getVoicedIntervals(chordIntervals, inv) {
   if (inv === -1) return [...chordIntervals]; // original root, no inversion
@@ -885,8 +932,14 @@ function buildChartInternal() {
     let longPressTimer = null;
     let didLongPress = false;
 
-    // Track hovered cell for Enter key playback
-    cell.addEventListener('mouseenter', () => { hoveredCell = cell; });
+    // Track hovered cell for space key playback
+    cell.addEventListener('mouseenter', () => {
+      hoveredCell = cell;
+    });
+    cell.addEventListener('mousemove', () => {
+      if (selectedCell) { selectedCell.classList.remove('cell-selected'); selectedCell = null; }
+      document.body.classList.remove('kb-nav');
+    });
     cell.addEventListener('mouseleave', () => { if (hoveredCell === cell) hoveredCell = null; });
 
     // Computer mode: single click = popup, double click = play chord (whole cell)
@@ -1160,6 +1213,7 @@ document.getElementById('btnRootsLeft').addEventListener('click', function() {
 let currentCell = null;
 
 function openModal(cell) {
+  selectCell(cell);
   currentCell = cell;
   const root = parseInt(cell.dataset.root);
   const intervals = cell.dataset.intervals.split(',').map(Number);
@@ -1188,6 +1242,12 @@ function openModal(cell) {
   }
   document.getElementById('modalIntervals').textContent = 'Stacked intervals: ' + steps.join(', ');
 
+  // Show which keys this chord belongs to
+  const keys = chordInKeys(root, intervals);
+  document.getElementById('modalKeyInfo').innerHTML = keys.length
+    ? 'Common in: ' + keys.join(', ')
+    : 'No standard diatonic key';
+
   const modal = document.querySelector('.modal');
   const colors = { beginner: '#4ECDC4', intermediate: '#FFC300', advanced: '#FF6B6B' };
   const borderColor = colors[level] || '#444';
@@ -1201,6 +1261,37 @@ function openModal(cell) {
   document.getElementById('modalInvLabel').textContent = inversionLabel(inversion);
   document.getElementById('modal').classList.add('active');
 
+}
+
+function selectCell(cell) {
+  if (selectedCell) selectedCell.classList.remove('cell-selected');
+  selectedCell = cell;
+  if (cell) {
+    cell.classList.add('cell-selected');
+    cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    document.body.classList.add('kb-nav');
+  }
+}
+
+function navigateGrid(rowDelta, colDelta) {
+  const allCells = Array.from(document.querySelectorAll('td.chord-cell'));
+  if (!allCells.length) return;
+  if (!selectedCell || !document.contains(selectedCell)) {
+    selectCell(allCells[0]);
+    return;
+  }
+  const td = selectedCell;
+  const tr = td.parentElement;
+  const tbody = tr.parentElement;
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const rowIdx = rows.indexOf(tr);
+  const cells = Array.from(tr.querySelectorAll('td.chord-cell'));
+  const colIdx = cells.indexOf(td);
+  const newRowIdx = ((rowIdx + rowDelta) % rows.length + rows.length) % rows.length;
+  const newRow = rows[newRowIdx];
+  const newCells = Array.from(newRow.querySelectorAll('td.chord-cell'));
+  const newColIdx = ((colIdx + colDelta) % newCells.length + newCells.length) % newCells.length;
+  selectCell(newCells[newColIdx]);
 }
 
 function navigateModal(rowDelta, colDelta) {
@@ -1282,6 +1373,10 @@ function refreshModal() {
     steps.push('+' + d + ' (' + (STEP[d] || d + ' semitones') + ')');
   }
   document.getElementById('modalIntervals').textContent = 'Stacked intervals: ' + steps.join(', ');
+  const rkeys = chordInKeys(root, origChord.intervals);
+  document.getElementById('modalKeyInfo').innerHTML = rkeys.length
+    ? 'Common in: ' + rkeys.join(', ')
+    : 'No standard diatonic key';
 }
 
 document.getElementById('modalClose').addEventListener('click', closeModal);
@@ -1297,14 +1392,38 @@ document.addEventListener('keydown', e => {
   if (e.key === '5') { e.preventDefault(); setInversion(5); return; }
   if (e.key === '6') { e.preventDefault(); setInversion(6); return; }
 
-  if (e.key === ' ' && !currentModal && hoveredCell) { e.preventDefault(); playCellChord(hoveredCell); return; }
-  if (e.key === 'Escape') { closeModal(); return; }
-  if (!currentModal) return;
-  if (e.key === 'ArrowUp') { e.preventDefault(); navigateModal(-1, 0); }
-  else if (e.key === 'ArrowDown') { e.preventDefault(); navigateModal(1, 0); }
-  else if (e.key === 'ArrowLeft') { e.preventDefault(); navigateModal(0, -1); }
-  else if (e.key === 'ArrowRight') { e.preventDefault(); navigateModal(0, 1); }
-  else if (e.key === ' ') { e.preventDefault(); document.getElementById('modalPlay').click(); }
+  const activeCell = selectedCell || hoveredCell;
+  if (e.key === ' ' && !currentModal && activeCell) { e.preventDefault(); playCellChord(activeCell); return; }
+  if (e.key === 'Enter' && activeCell) {
+    e.preventDefault();
+    if (currentModal) { closeModal(); } else { openModal(activeCell); }
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (currentModal) { closeModal(); }
+    return;
+  }
+
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    if (currentModal) {
+      e.preventDefault();
+      const rd = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0;
+      const cd = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+      navigateModal(rd, cd);
+    } else if (inputMode === 'computer') {
+      e.preventDefault();
+      if (!selectedCell || !document.contains(selectedCell)) {
+        const start = hoveredCell || document.querySelector('td.chord-cell');
+        if (start) selectCell(start);
+      } else {
+        const rd = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0;
+        const cd = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+        navigateGrid(rd, cd);
+      }
+    }
+    return;
+  }
+  if (e.key === ' ' && currentModal) { e.preventDefault(); document.getElementById('modalPlay').click(); }
 });
 
 function setInversion(inv) {
@@ -1319,6 +1438,7 @@ function setInversion(inv) {
   else buildChart();
 }
 function closeModal() {
+  if (currentCell) selectCell(currentCell);
   document.getElementById('modal').classList.remove('active');
   currentModal = null;
   currentCell = null;
