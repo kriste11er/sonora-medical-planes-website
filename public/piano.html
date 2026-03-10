@@ -1455,15 +1455,28 @@ function refreshModal() {
 document.getElementById('modalClose').addEventListener('click', closeModal);
 document.getElementById('modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
 document.addEventListener('keydown', e => {
-  // Inversion shortcuts work globally (with or without modal)
-  if (e.key === '`' || e.key === '~') { e.preventDefault(); setInversion(0); return; }
-  if (e.key === '0') { e.preventDefault(); setInversion(-1); return; }
-  if (e.key === '1') { e.preventDefault(); setInversion(1); return; }
-  if (e.key === '2') { e.preventDefault(); setInversion(2); return; }
-  if (e.key === '3') { e.preventDefault(); setInversion(3); return; }
-  if (e.key === '4') { e.preventDefault(); setInversion(4); return; }
-  if (e.key === '5') { e.preventDefault(); setInversion(5); return; }
-  if (e.key === '6') { e.preventDefault(); setInversion(6); return; }
+  // Inversion shortcuts — skip when over seq bar or typing in an input
+  if (!seqBarHovered && document.activeElement.tagName !== 'INPUT') {
+    if (e.key === '`' || e.key === '~') { e.preventDefault(); setInversion(0); return; }
+    if (e.key === '0') { e.preventDefault(); setInversion(-1); return; }
+    if (e.key === '1') { e.preventDefault(); setInversion(1); return; }
+    if (e.key === '2') { e.preventDefault(); setInversion(2); return; }
+    if (e.key === '3') { e.preventDefault(); setInversion(3); return; }
+    if (e.key === '4') { e.preventDefault(); setInversion(4); return; }
+    if (e.key === '5') { e.preventDefault(); setInversion(5); return; }
+    if (e.key === '6') { e.preventDefault(); setInversion(6); return; }
+  }
+
+  // Space over seq bar: play from cursor / pause
+  if (e.key === ' ' && !currentModal && seqBarHovered) {
+    e.preventDefault();
+    if (isPlaying) { stopPlayback(false); }
+    else {
+      const startIdx = seqCursor >= 0 ? seqCursor : playbackPauseIndex;
+      playSequence(startIdx);
+    }
+    return;
+  }
 
   const activeCell = selectedCell || hoveredCell;
   if (e.key === ' ' && !currentModal && activeCell) { e.preventDefault(); playCellChord(activeCell); return; }
@@ -1501,7 +1514,7 @@ document.addEventListener('keydown', e => {
   // Recording shortcuts (only when no modal and no input focused)
   if (!currentModal && document.activeElement.tagName !== 'INPUT') {
     if (e.key === 'r' || e.key === 'R') { toggleRecording(); return; }
-    if (e.key === 'p' || e.key === 'P') { isPlaying ? stopPlayback() : playSequence(); return; }
+    if (e.key === 'p' || e.key === 'P') { isPlaying ? stopPlayback(false) : playSequence(playbackPauseIndex); return; }
     if (e.key === 'Backspace' && chordSequence.length > 0) {
       e.preventDefault();
       const delIdx = seqCursor > 0 ? seqCursor - 1 : chordSequence.length - 1;
@@ -1562,6 +1575,39 @@ function playPianoTone(freq, volume, dur) {
     env.connect(master);
     osc.start(now);
     osc.stop(now + dur);
+  }
+}
+
+// Sustained version for sequence playback — gentler decay, longer ring
+function playSustainedTone(freq, volume, dur) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const now = audioCtx.currentTime;
+  const harmonics = [
+    { ratio: 1,   amp: 1.0  },
+    { ratio: 2,   amp: 0.4  },
+    { ratio: 3,   amp: 0.15 },
+    { ratio: 4,   amp: 0.06 },
+    { ratio: 5,   amp: 0.02 },
+  ];
+  const master = audioCtx.createGain();
+  master.gain.setValueAtTime(volume, now);
+  master.connect(audioCtx.destination);
+
+  for (const h of harmonics) {
+    const osc = audioCtx.createOscillator();
+    const env = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq * h.ratio;
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime(h.amp, now + 0.008);
+    // Sustain at 70% for most of the duration, then gentle fade
+    env.gain.exponentialRampToValueAtTime(h.amp * 0.7, now + dur * 0.5);
+    env.gain.exponentialRampToValueAtTime(h.amp * 0.3, now + dur * 0.85);
+    env.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    osc.connect(env);
+    env.connect(master);
+    osc.start(now);
+    osc.stop(now + dur + 0.05);
   }
 }
 
@@ -1645,46 +1691,58 @@ function renderSequenceChips() {
   attachDragListeners();
 }
 
-function playSequence() {
+let playbackPauseIndex = 0; // where to resume from
+let seqBarHovered = false;
+
+function playSequence(startFrom) {
   if (chordSequence.length === 0) return;
   stopPlayback();
+  const startIdx = startFrom !== undefined ? startFrom : 0;
   isPlaying = true;
   document.getElementById('seqPlay').classList.add('playing');
   document.getElementById('seqPlay').textContent = 'STOP';
   const beatDur = 60 / sequenceTempo;
+  // Sustain: notes ring for 2x beat duration for smooth overlap
+  const sustainDur = beatDur * 2;
 
-  chordSequence.forEach((chord, i) => {
+  for (let i = startIdx; i < chordSequence.length; i++) {
+    const chord = chordSequence[i];
+    const delay = (i - startIdx) * beatDur * 1000;
     const t = setTimeout(() => {
+      playbackPauseIndex = i + 1;
       // Highlight chip
       document.querySelectorAll('.seq-chip').forEach((c, j) => c.classList.toggle('active', j === i));
-      // Play chord with sustain pedal effect (notes ring 50% longer than beat)
+      // Play chord with sustained tone
       const base = 60 + chord.root;
       chord.intervals.forEach(interval => {
         const freq = 440 * Math.pow(2, ((base + interval) - 69) / 12);
         const isRoot = ((interval % 12) + 12) % 12 === 0;
-        playPianoTone(freq, isRoot ? 0.216 : 0.18, beatDur * 1.5);
+        playSustainedTone(freq, isRoot ? 0.216 : 0.18, sustainDur);
       });
-    }, i * beatDur * 1000);
+    }, delay);
     playbackTimeouts.push(t);
-  });
+  }
 
   // Clear highlight after last chord
+  const totalDelay = (chordSequence.length - startIdx) * beatDur * 1000;
   const endT = setTimeout(() => {
     document.querySelectorAll('.seq-chip').forEach(c => c.classList.remove('active'));
     isPlaying = false;
+    playbackPauseIndex = 0;
     document.getElementById('seqPlay').classList.remove('playing');
     document.getElementById('seqPlay').textContent = 'PLAY';
-  }, chordSequence.length * beatDur * 1000 + 200);
+  }, totalDelay + 200);
   playbackTimeouts.push(endT);
 }
 
-function stopPlayback() {
+function stopPlayback(resetPosition) {
   playbackTimeouts.forEach(t => clearTimeout(t));
   playbackTimeouts = [];
   isPlaying = false;
   document.querySelectorAll('.seq-chip').forEach(c => c.classList.remove('active'));
   document.getElementById('seqPlay').classList.remove('playing');
   document.getElementById('seqPlay').textContent = 'PLAY';
+  if (resetPosition) playbackPauseIndex = 0;
 }
 
 function clearSequence() {
@@ -1707,8 +1765,10 @@ function exportSequence() {
 function updateSeqToggle() {}
 
 // Sequence bar event listeners
+document.getElementById('seqBar').addEventListener('mouseenter', () => { seqBarHovered = true; });
+document.getElementById('seqBar').addEventListener('mouseleave', () => { seqBarHovered = false; });
 document.getElementById('seqRec').addEventListener('click', toggleRecording);
-document.getElementById('seqPlay').addEventListener('click', () => { isPlaying ? stopPlayback() : playSequence(); });
+document.getElementById('seqPlay').addEventListener('click', () => { isPlaying ? stopPlayback(true) : playSequence(0); });
 document.getElementById('seqClear').addEventListener('click', clearSequence);
 document.getElementById('seqExport').addEventListener('click', exportSequence);
 document.getElementById('seqBpm').addEventListener('input', function() {
