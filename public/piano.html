@@ -319,6 +319,52 @@ td.chord-cell.cell-selected { background: rgba(255,255,255,0.35); outline: 2px s
   text-align: center;
 }
 .phone-hidden { display: none; }
+
+/* Sequence recording bar */
+@keyframes pulse-rec { 0%,100% { box-shadow: 0 0 0 0 rgba(255,60,60,0.5); } 50% { box-shadow: 0 0 0 6px rgba(255,60,60,0); } }
+.seq-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 90;
+  background: var(--surface); border-top: 2px solid var(--border);
+  padding: 8px 16px; display: flex; flex-direction: column; gap: 6px;
+}
+.seq-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.seq-btn {
+  padding: 6px 16px; border: 2px solid #555; background: transparent;
+  color: #ccc; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+}
+.seq-btn:hover { border-color: #888; color: #fff; }
+.seq-btn.recording { border-color: #f44; color: #f44; animation: pulse-rec 1.2s infinite; }
+.seq-btn.playing { border-color: var(--tone-w); color: var(--tone-w); }
+.seq-chips {
+  display: flex; gap: 6px; overflow-x: auto; padding: 4px 0; min-height: 32px;
+  scrollbar-width: thin; scrollbar-color: #444 transparent;
+}
+.seq-chip {
+  flex-shrink: 0; padding: 4px 12px; background: rgba(255,255,255,0.08);
+  border: 1px solid #444; border-radius: 14px; color: #ccc; font-size: 0.85rem;
+  cursor: pointer; position: relative; white-space: nowrap; user-select: none;
+}
+.seq-chip:hover { background: rgba(255,255,255,0.15); }
+.seq-chip.active { border-color: var(--tone-w); color: #fff; background: rgba(78,205,196,0.2); }
+.seq-chip .chip-remove {
+  display: none; position: absolute; top: -6px; right: -4px;
+  background: #444; color: #ccc; border-radius: 50%; width: 16px; height: 16px;
+  font-size: 11px; line-height: 16px; text-align: center; cursor: pointer;
+}
+.seq-chip:hover .chip-remove { display: block; }
+.seq-chip.dragging { opacity: 0.4; }
+.seq-gap {
+  flex-shrink: 0; width: 8px; min-height: 28px; cursor: text; border-radius: 4px;
+  position: relative; margin: 0 -2px;
+}
+.seq-gap:hover { background: rgba(255,255,255,0.1); }
+.seq-gap.cursor::after {
+  content: ''; position: absolute; left: 3px; top: 2px; bottom: 2px;
+  width: 2px; background: var(--tone-w); border-radius: 1px;
+  animation: blink-cursor 1s step-end infinite;
+}
+@keyframes blink-cursor { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+.seq-bpm { width: 60px; padding: 4px 6px; background: var(--surface); border: 1px solid #555; color: #ccc; border-radius: 4px; text-align: center; font-size: 0.85rem; }
 </style>
 </head>
 <body>
@@ -394,6 +440,18 @@ td.chord-cell.cell-selected { background: rgba(255,255,255,0.35); outline: 2px s
   </div>
 </div>
 
+<div class="seq-bar" id="seqBar">
+  <div class="seq-controls">
+    <button class="seq-btn" id="seqRec">REC</button>
+    <button class="seq-btn" id="seqPlay">PLAY</button>
+    <button class="seq-btn" id="seqClear">CLEAR</button>
+    <span style="color:#777;font-size:0.85rem;margin-left:8px;">BPM</span>
+    <input type="number" class="seq-bpm" id="seqBpm" value="180" min="30" max="300">
+    <button class="seq-btn" id="seqExport">Copy</button>
+  </div>
+  <div class="seq-chips" id="seqChips"></div>
+</div>
+
 <script>
 // ===== DATA =====
 const NOTE_NAMES_SHARP = ['C','C#/Db','D','D#/Eb','E','F','F#/Gb','G','G#/Ab','A','A#/Bb','B'];
@@ -460,6 +518,14 @@ let hoveredCell = null; // currently hovered chord cell for Enter key playback
 let selectedCell = null; // keyboard-navigated cell
 let accidentalMode = 'sharp'; // 'sharp' or 'flat'
 
+// ===== RECORDING STATE =====
+let isRecording = false;
+let chordSequence = [];
+let sequenceTempo = 180;
+let playbackTimeouts = [];
+let isPlaying = false;
+let seqCursor = -1; // -1 = append to end, otherwise insert index
+
 // ===== SVG RENDERING =====
 function pianoSVG(root, intervals, large, fifthRef, level) {
   const toneColors = {
@@ -477,8 +543,10 @@ function pianoSVG(root, intervals, large, fifthRef, level) {
   const maxT = Math.max(...tones);
   const minT = Math.min(...tones);
 
-  const prevAbsolute = root - 7; // 5th below root
-  const nextAbsolute = root + 7; // 5th above root
+  // Circle of fifths arrows surround the actual root (which may be bass octave)
+  const rootBase = rootSemitone !== undefined ? rootSemitone : root;
+  const prevAbsolute = rootBase - 7; // 5th below root
+  const nextAbsolute = rootBase + 7; // 5th above root
 
   let start, finalEnd;
   const fifthRefMap = {};
@@ -1048,6 +1116,11 @@ function playCellChord(cell) {
     const isRoot = ((interval % 12) + 12) % 12 === 0; // root at any octave
     playPianoTone(freq, isRoot ? 0.216 : 0.18, 3);
   });
+  // Capture for recording
+  try {
+    const syms = JSON.parse(cell.dataset.syms);
+    captureChord(root, intervals, cell.dataset.name, chordSymbol(root, syms), cell.dataset.level);
+  } catch(e) {}
 }
 
 // ===== MODE TOGGLE =====
@@ -1424,6 +1497,20 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.key === ' ' && currentModal) { e.preventDefault(); document.getElementById('modalPlay').click(); }
+
+  // Recording shortcuts (only when no modal and no input focused)
+  if (!currentModal && document.activeElement.tagName !== 'INPUT') {
+    if (e.key === 'r' || e.key === 'R') { toggleRecording(); return; }
+    if (e.key === 'p' || e.key === 'P') { isPlaying ? stopPlayback() : playSequence(); return; }
+    if (e.key === 'Backspace' && chordSequence.length > 0) {
+      e.preventDefault();
+      const delIdx = seqCursor > 0 ? seqCursor - 1 : chordSequence.length - 1;
+      chordSequence.splice(delIdx, 1);
+      if (seqCursor > 0) seqCursor--;
+      renderSequenceChips();
+      return;
+    }
+  }
 });
 
 function setInversion(inv) {
@@ -1492,6 +1579,13 @@ document.getElementById('modalPlay').addEventListener('click', () => {
     const isRoot = ((interval % 12) + 12) % 12 === 0; // root at any octave
     playPianoTone(freq, isRoot ? 0.216 : 0.18, 3);
   });
+  // Capture for recording
+  if (currentCell) {
+    try {
+      const syms = JSON.parse(currentCell.dataset.syms);
+      captureChord(root, intervals, currentCell.dataset.name, chordSymbol(root, syms), currentCell.dataset.level);
+    } catch(e) {}
+  }
 });
 
 // Individual key clicks only in modal popup
@@ -1502,6 +1596,205 @@ document.getElementById('modal').addEventListener('click', e => {
   const midi = parseInt(key.dataset.midi);
   if (!isNaN(midi)) playNote(midi, 1.5);
 });
+
+// ===== RECORDING =====
+function captureChord(root, intervals, name, symbol, level) {
+  if (!isRecording) return;
+  let displaySymbol = symbol;
+  if (inversion === -1) displaySymbol += ' (Hi)';
+  else if (inversion > 0) displaySymbol += ' inv' + inversion;
+  const entry = { root, intervals: [...intervals], name, symbol: displaySymbol, level };
+  if (seqCursor >= 0 && seqCursor <= chordSequence.length) {
+    chordSequence.splice(seqCursor, 0, entry);
+    seqCursor++;
+  } else {
+    chordSequence.push(entry);
+    seqCursor = chordSequence.length;
+  }
+  renderSequenceChips();
+}
+
+function toggleRecording() {
+  isRecording = !isRecording;
+  const btn = document.getElementById('seqRec');
+  btn.classList.toggle('recording', isRecording);
+  btn.textContent = isRecording ? 'STOP REC' : 'REC';
+}
+
+function renderSequenceChips() {
+  const container = document.getElementById('seqChips');
+  let html = '';
+  // Gap before first chip
+  html += `<div class="seq-gap${seqCursor === 0 ? ' cursor' : ''}" data-gap="0"></div>`;
+  chordSequence.forEach((chord, i) => {
+    html += `<div class="seq-chip" draggable="true" data-index="${i}" title="${chord.name}">
+       ${chord.symbol}
+       <span class="chip-remove" data-index="${i}">&times;</span>
+     </div>`;
+    html += `<div class="seq-gap${seqCursor === i + 1 ? ' cursor' : ''}" data-gap="${i + 1}"></div>`;
+  });
+  container.innerHTML = html;
+  // Scroll to cursor or end
+  if (seqCursor >= 0) {
+    const cursorEl = container.querySelector('.seq-gap.cursor');
+    if (cursorEl) cursorEl.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  } else {
+    container.scrollLeft = container.scrollWidth;
+  }
+  updateSeqToggle();
+  attachDragListeners();
+}
+
+function playSequence() {
+  if (chordSequence.length === 0) return;
+  stopPlayback();
+  isPlaying = true;
+  document.getElementById('seqPlay').classList.add('playing');
+  document.getElementById('seqPlay').textContent = 'STOP';
+  const beatDur = 60 / sequenceTempo;
+
+  chordSequence.forEach((chord, i) => {
+    const t = setTimeout(() => {
+      // Highlight chip
+      document.querySelectorAll('.seq-chip').forEach((c, j) => c.classList.toggle('active', j === i));
+      // Play chord with sustain pedal effect (notes ring 50% longer than beat)
+      const base = 60 + chord.root;
+      chord.intervals.forEach(interval => {
+        const freq = 440 * Math.pow(2, ((base + interval) - 69) / 12);
+        const isRoot = ((interval % 12) + 12) % 12 === 0;
+        playPianoTone(freq, isRoot ? 0.216 : 0.18, beatDur * 1.5);
+      });
+    }, i * beatDur * 1000);
+    playbackTimeouts.push(t);
+  });
+
+  // Clear highlight after last chord
+  const endT = setTimeout(() => {
+    document.querySelectorAll('.seq-chip').forEach(c => c.classList.remove('active'));
+    isPlaying = false;
+    document.getElementById('seqPlay').classList.remove('playing');
+    document.getElementById('seqPlay').textContent = 'PLAY';
+  }, chordSequence.length * beatDur * 1000 + 200);
+  playbackTimeouts.push(endT);
+}
+
+function stopPlayback() {
+  playbackTimeouts.forEach(t => clearTimeout(t));
+  playbackTimeouts = [];
+  isPlaying = false;
+  document.querySelectorAll('.seq-chip').forEach(c => c.classList.remove('active'));
+  document.getElementById('seqPlay').classList.remove('playing');
+  document.getElementById('seqPlay').textContent = 'PLAY';
+}
+
+function clearSequence() {
+  stopPlayback();
+  chordSequence = [];
+  seqCursor = -1;
+  renderSequenceChips();
+}
+
+function exportSequence() {
+  if (chordSequence.length === 0) return;
+  const text = chordSequence.map(c => c.symbol).join(' | ');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('seqExport');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
+}
+
+function updateSeqToggle() {}
+
+// Sequence bar event listeners
+document.getElementById('seqRec').addEventListener('click', toggleRecording);
+document.getElementById('seqPlay').addEventListener('click', () => { isPlaying ? stopPlayback() : playSequence(); });
+document.getElementById('seqClear').addEventListener('click', clearSequence);
+document.getElementById('seqExport').addEventListener('click', exportSequence);
+document.getElementById('seqBpm').addEventListener('input', function() {
+  const val = parseInt(this.value);
+  if (val && val >= 30 && val <= 300) sequenceTempo = val;
+});
+document.getElementById('seqBpm').addEventListener('blur', function() {
+  sequenceTempo = Math.max(30, Math.min(300, parseInt(this.value) || 120));
+  this.value = sequenceTempo;
+});
+
+// Chip clicks (play, remove, or set cursor)
+document.getElementById('seqChips').addEventListener('click', e => {
+  const remove = e.target.closest('.chip-remove');
+  if (remove) {
+    const idx = parseInt(remove.dataset.index);
+    if (seqCursor > idx) seqCursor--;
+    chordSequence.splice(idx, 1);
+    renderSequenceChips();
+    return;
+  }
+  const gap = e.target.closest('.seq-gap');
+  if (gap) {
+    seqCursor = parseInt(gap.dataset.gap);
+    renderSequenceChips();
+    return;
+  }
+  const chip = e.target.closest('.seq-chip');
+  if (chip) {
+    const idx = parseInt(chip.dataset.index);
+    const chord = chordSequence[idx];
+    if (!chord) return;
+    const base = 60 + chord.root;
+    chord.intervals.forEach(interval => {
+      const freq = 440 * Math.pow(2, ((base + interval) - 69) / 12);
+      const isRoot = ((interval % 12) + 12) % 12 === 0;
+      playPianoTone(freq, isRoot ? 0.216 : 0.18, 3);
+    });
+  }
+});
+
+// Drag and drop reordering
+let dragSrcIndex = null;
+function attachDragListeners() {
+  const chips = document.querySelectorAll('.seq-chip[draggable]');
+  chips.forEach(chip => {
+    chip.addEventListener('dragstart', e => {
+      dragSrcIndex = parseInt(chip.dataset.index);
+      chip.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragSrcIndex);
+    });
+    chip.addEventListener('dragend', () => {
+      chip.classList.remove('dragging');
+      document.querySelectorAll('.seq-gap').forEach(g => g.style.background = '');
+      dragSrcIndex = null;
+    });
+  });
+  const gaps = document.querySelectorAll('.seq-gap');
+  gaps.forEach(gap => {
+    gap.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      gap.style.background = 'rgba(78,205,196,0.3)';
+    });
+    gap.addEventListener('dragleave', () => {
+      gap.style.background = '';
+    });
+    gap.addEventListener('drop', e => {
+      e.preventDefault();
+      gap.style.background = '';
+      const from = dragSrcIndex;
+      let to = parseInt(gap.dataset.gap);
+      if (from === null || from === undefined) return;
+      // Remove from old position
+      const [moved] = chordSequence.splice(from, 1);
+      // Adjust target index after removal
+      if (to > from) to--;
+      chordSequence.splice(to, 0, moved);
+      // Update cursor
+      seqCursor = to + 1;
+      renderSequenceChips();
+    });
+  });
+}
+
 
 // ===== ZOOM =====
 let currentZoomMode = '1';
